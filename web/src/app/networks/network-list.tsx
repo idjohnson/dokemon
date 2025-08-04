@@ -14,7 +14,7 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import { INetwork } from "@/lib/api-models"
-import { useState } from "react"
+import { useMemo, useState } from "react"
 import useNetworks from "@/hooks/useNetworks"
 import MainArea from "@/components/widgets/main-area"
 import TopBar from "@/components/widgets/top-bar"
@@ -27,6 +27,8 @@ import { TableNoData } from "@/components/widgets/table-no-data"
 import { toastFailed, toastSuccess } from "@/lib/utils"
 import apiBaseUrl from "@/lib/api-base-url"
 import DeleteDialog from "@/components/delete-dialog"
+import { Input } from "@/components/ui/input"
+import { SortableIcon } from "@/components/widgets/sortable-icon"
 
 const systemNetwoks = [
   "none",
@@ -36,6 +38,8 @@ const systemNetwoks = [
   "docker_gwbridge",
   "docker_volumes-backup-extension-desktop-extension_default",
 ]
+
+type SortKey = "id" | "name" | "driver" | "scope" | "status"
 
 export default function NetworkList() {
   const { nodeId } = useParams()
@@ -47,8 +51,68 @@ export default function NetworkList() {
     useState(false)
   const [deleteInProgress, setDeleteInProgress] = useState(false)
   const [pruneInProgress, setPruneInProgress] = useState(false)
+  const [searchTerm, setSearchTerm] = useState("")
+  const [sortKey, setSortKey] = useState<SortKey>("name")
+  const [sortOrder, setSortOrder] = useState<"asc" | "desc">("asc")
+
+  const sortedAndFilteredNetworks = useMemo(() => {
+    if (!networks?.items) return []
+
+    const filtered = networks.items.filter((network) =>
+      network.name.toLowerCase().includes(searchTerm.toLowerCase())
+    )
+
+    const sorted = [...filtered].sort((a, b) => {
+      let aValue: string | number = ""
+      let bValue: string | number = ""
+
+      switch (sortKey) {
+        case "id":
+          aValue = a.id
+          bValue = b.id
+          break
+        case "name":
+          aValue = a.name
+          bValue = b.name
+          break
+        case "driver":
+          aValue = a.driver
+          bValue = b.driver
+          break
+        case "scope":
+          aValue = a.scope
+          bValue = b.scope
+          break
+        case "status":
+          aValue = a.inUse ? "In use" : "Unused"
+          bValue = b.inUse ? "In use" : "Unused"
+          break
+        default:
+          break
+      }
+
+      if (aValue < bValue) {
+        return sortOrder === "asc" ? -1 : 1
+      }
+      if (aValue > bValue) {
+        return sortOrder === "asc" ? 1 : -1
+      }
+      return 0
+    })
+
+    return sorted
+  }, [networks, searchTerm, sortKey, sortOrder])
 
   if (isLoading) return <Loading />
+
+  const handleSort = (key: SortKey) => {
+    if (sortKey === key) {
+      setSortOrder(sortOrder === "asc" ? "desc" : "asc")
+    } else {
+      setSortKey(key)
+      setSortOrder("asc")
+    }
+  }
 
   const handleDeleteNetworkConfirmation = (network: INetwork) => {
     setNetwork({ ...network })
@@ -128,52 +192,117 @@ export default function NetworkList() {
           <BreadcrumbCurrent>Networks</BreadcrumbCurrent>
         </Breadcrumb>
         <TopBarActions>
-          <DeleteDialog
-            widthClass="w-42"
-            deleteCaption="Delete Unused (Prune All)"
-            deleteHandler={handlePrune}
-            isProcessing={pruneInProgress}
-            title="Delete Unused"
-            message={`Are you sure you want to delete all unused networks?`}
-          />
+          <div className="flex items-center space-x-2">
+            <Input
+              type="search"
+              placeholder="Search networks..."
+              className="w-64"
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+            />
+            <DeleteDialog
+              widthClass="w-42"
+              deleteCaption="Delete Unused (Prune All)"
+              deleteHandler={handlePrune}
+              isProcessing={pruneInProgress}
+              title="Delete Unused"
+              message={`Are you sure you want to delete all unused networks?`}
+            />
+          </div>
         </TopBarActions>
       </TopBar>
       <MainContent>
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead scope="col">Id</TableHead>
-              <TableHead scope="col">Name</TableHead>
-              <TableHead scope="col">Driver</TableHead>
-              <TableHead scope="col">Scope</TableHead>
-              <TableHead scope="col">Status</TableHead>
+              <TableHead
+                scope="col"
+                className="cursor-pointer"
+                onClick={() => handleSort("id")}
+              >
+                Id
+                <SortableIcon
+                  sortKey="id"
+                  currentSortKey={sortKey}
+                  sortOrder={sortOrder}
+                />
+              </TableHead>
+              <TableHead
+                scope="col"
+                className="cursor-pointer"
+                onClick={() => handleSort("name")}
+              >
+                Name
+                <SortableIcon
+                  sortKey="name"
+                  currentSortKey={sortKey}
+                  sortOrder={sortOrder}
+                />
+              </TableHead>
+              <TableHead
+                scope="col"
+                className="cursor-pointer"
+                onClick={() => handleSort("driver")}
+              >
+                Driver
+                <SortableIcon
+                  sortKey="driver"
+                  currentSortKey={sortKey}
+                  sortOrder={sortOrder}
+                />
+              </TableHead>
+              <TableHead
+                scope="col"
+                className="cursor-pointer"
+                onClick={() => handleSort("scope")}
+              >
+                Scope
+                <SortableIcon
+                  sortKey="scope"
+                  currentSortKey={sortKey}
+                  sortOrder={sortOrder}
+                />
+              </TableHead>
+              <TableHead
+                scope="col"
+                className="cursor-pointer"
+                onClick={() => handleSort("status")}
+              >
+                Status
+                <SortableIcon
+                  sortKey="status"
+                  currentSortKey={sortKey}
+                  sortOrder={sortOrder}
+                />
+              </TableHead>
               <TableHead scope="col">
                 <span className="sr-only">Actions</span>
               </TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
-            {networks?.items?.length === 0 && <TableNoData colSpan={5} />}
-            {networks?.items &&
-              networks?.items.map((item) => (
-                <TableRow key={item.id}>
-                  <TableCell>{item.id.substring(0, 12)}</TableCell>
-                  <TableCell>{item.name}</TableCell>
-                  <TableCell>{item.driver}</TableCell>
-                  <TableCell>{item.scope}</TableCell>
-                  <TableCell>{item.inUse ? "In use" : "Unused"}</TableCell>
-                  <TableCell className="text-right">
-                    {!systemNetwoks.includes(item.name) && !item.inUse && (
-                      <TableButtonDelete
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          handleDeleteNetworkConfirmation(item)
-                        }}
-                      />
-                    )}
-                  </TableCell>
-                </TableRow>
-              ))}
+            {sortedAndFilteredNetworks.length === 0 && (
+              <TableNoData colSpan={6} />
+            )}
+            {sortedAndFilteredNetworks.map((item) => (
+              <TableRow key={item.id}>
+                <TableCell>{item.id.substring(0, 12)}</TableCell>
+                <TableCell>{item.name}</TableCell>
+                <TableCell>{item.driver}</TableCell>
+                <TableCell>{item.scope}</TableCell>
+                <TableCell>{item.inUse ? "In use" : "Unused"}</TableCell>
+                <TableCell className="text-right">
+                  {!systemNetwoks.includes(item.name) && !item.inUse && (
+                    <TableButtonDelete
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        handleDeleteNetworkConfirmation(item)
+                      }}
+                    />
+                  )}
+                </TableCell>
+              </TableRow>
+            ))}
           </TableBody>
         </Table>
       </MainContent>

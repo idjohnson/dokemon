@@ -14,7 +14,7 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import { IVolume } from "@/lib/api-models"
-import { useState } from "react"
+import { useMemo, useState } from "react"
 import MainArea from "@/components/widgets/main-area"
 import TopBar from "@/components/widgets/top-bar"
 import TopBarActions from "@/components/widgets/top-bar-actions"
@@ -27,6 +27,10 @@ import { TableNoData } from "@/components/widgets/table-no-data"
 import DeleteDialog from "@/components/delete-dialog"
 import { convertByteToMb, toastFailed, toastSuccess } from "@/lib/utils"
 import apiBaseUrl from "@/lib/api-base-url"
+import { Input } from "@/components/ui/input"
+import { SortableIcon } from "@/components/widgets/sortable-icon"
+
+type SortKey = "driver" | "name" | "status"
 
 export default function VolumeList() {
   const { nodeId } = useParams()
@@ -38,8 +42,60 @@ export default function VolumeList() {
     useState(false)
   const [deleteInProgress, setDeleteInProgress] = useState(false)
   const [pruneInProgress, setPruneInProgress] = useState(false)
+  const [searchTerm, setSearchTerm] = useState("")
+  const [sortKey, setSortKey] = useState<SortKey>("name")
+  const [sortOrder, setSortOrder] = useState<"asc" | "desc">("asc")
+
+  const sortedAndFilteredVolumes = useMemo(() => {
+    if (!volumes?.items) return []
+
+    const filtered = volumes.items.filter((volume) =>
+      volume.name.toLowerCase().includes(searchTerm.toLowerCase())
+    )
+
+    const sorted = [...filtered].sort((a, b) => {
+      let aValue: string | number = ""
+      let bValue: string | number = ""
+
+      switch (sortKey) {
+        case "driver":
+          aValue = a.driver
+          bValue = b.driver
+          break
+        case "name":
+          aValue = a.name
+          bValue = b.name
+          break
+        case "status":
+          aValue = a.inUse ? "In use" : "Unused"
+          bValue = b.inUse ? "In use" : "Unused"
+          break
+        default:
+          break
+      }
+
+      if (aValue < bValue) {
+        return sortOrder === "asc" ? -1 : 1
+      }
+      if (aValue > bValue) {
+        return sortOrder === "asc" ? 1 : -1
+      }
+      return 0
+    })
+
+    return sorted
+  }, [volumes, searchTerm, sortKey, sortOrder])
 
   if (isLoading) return <Loading />
+
+  const handleSort = (key: SortKey) => {
+    if (sortKey === key) {
+      setSortOrder(sortOrder === "asc" ? "desc" : "asc")
+    } else {
+      setSortKey(key)
+      setSortOrder("asc")
+    }
+  }
 
   const handleDeleteVolumeConfirmation = (volume: IVolume) => {
     setVolume({ ...volume })
@@ -123,48 +179,91 @@ export default function VolumeList() {
           <BreadcrumbCurrent>Volumes</BreadcrumbCurrent>
         </Breadcrumb>
         <TopBarActions>
-          <DeleteDialog
-            widthClass="w-42"
-            deleteCaption="Delete Unused (Prune All)"
-            deleteHandler={handlePrune}
-            isProcessing={pruneInProgress}
-            title="Delete Unused"
-            message={`Are you sure you want to delete all unused volumes?`}
-          />
+          <div className="flex items-center space-x-2">
+            <Input
+              type="search"
+              placeholder="Search volumes..."
+              className="w-64"
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+            />
+            <DeleteDialog
+              widthClass="w-42"
+              deleteCaption="Delete Unused (Prune All)"
+              deleteHandler={handlePrune}
+              isProcessing={pruneInProgress}
+              title="Delete Unused"
+              message={`Are you sure you want to delete all unused volumes?`}
+            />
+          </div>
         </TopBarActions>
       </TopBar>
       <MainContent>
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead scope="col">Driver</TableHead>
-              <TableHead scope="col">Name</TableHead>
-              <TableHead scope="col">Status</TableHead>
+              <TableHead
+                scope="col"
+                className="cursor-pointer"
+                onClick={() => handleSort("driver")}
+              >
+                Driver
+                <SortableIcon
+                  sortKey="driver"
+                  currentSortKey={sortKey}
+                  sortOrder={sortOrder}
+                />
+              </TableHead>
+              <TableHead
+                scope="col"
+                className="cursor-pointer"
+                onClick={() => handleSort("name")}
+              >
+                Name
+                <SortableIcon
+                  sortKey="name"
+                  currentSortKey={sortKey}
+                  sortOrder={sortOrder}
+                />
+              </TableHead>
+              <TableHead
+                scope="col"
+                className="cursor-pointer"
+                onClick={() => handleSort("status")}
+              >
+                Status
+                <SortableIcon
+                  sortKey="status"
+                  currentSortKey={sortKey}
+                  sortOrder={sortOrder}
+                />
+              </TableHead>
               <TableHead scope="col">
                 <span className="sr-only">Actions</span>
               </TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
-            {volumes?.items?.length === 0 && <TableNoData colSpan={3} />}
-            {volumes?.items &&
-              volumes?.items.map((item) => (
-                <TableRow key={item.name}>
-                  <TableCell>{item.driver}</TableCell>
-                  <TableCell>{item.name}</TableCell>
-                  <TableCell>{item.inUse ? "In use" : "Unused"}</TableCell>
-                  <TableCell className="text-right">
-                    {!item.inUse && (
-                      <TableButtonDelete
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          handleDeleteVolumeConfirmation(item)
-                        }}
-                      />
-                    )}
-                  </TableCell>
-                </TableRow>
-              ))}
+            {sortedAndFilteredVolumes.length === 0 && (
+              <TableNoData colSpan={3} />
+            )}
+            {sortedAndFilteredVolumes.map((item) => (
+              <TableRow key={item.name}>
+                <TableCell>{item.driver}</TableCell>
+                <TableCell>{item.name}</TableCell>
+                <TableCell>{item.inUse ? "In use" : "Unused"}</TableCell>
+                <TableCell className="text-right">
+                  {!item.inUse && (
+                    <TableButtonDelete
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        handleDeleteVolumeConfirmation(item)
+                      }}
+                    />
+                  )}
+                </TableCell>
+              </TableRow>
+            ))}
           </TableBody>
         </Table>
       </MainContent>

@@ -19,7 +19,7 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import apiBaseUrl from "@/lib/api-base-url"
 import { IContainer, IPort } from "@/lib/api-models"
-import { useState } from "react"
+import { useMemo, useState } from "react"
 import TopBar from "@/components/widgets/top-bar"
 import TopBarActions from "@/components/widgets/top-bar-actions"
 import MainArea from "@/components/widgets/main-area"
@@ -38,6 +38,10 @@ import {
 import TableButtonDelete from "@/components/widgets/table-button-delete"
 import { TableNoData } from "@/components/widgets/table-no-data"
 import DeleteDialog from "@/components/delete-dialog"
+import { Input } from "@/components/ui/input"
+import { SortableIcon } from "@/components/widgets/sortable-icon"
+
+type SortKey = "name" | "image" | "state"
 
 export default function ContainerList() {
   const { nodeId } = useParams()
@@ -49,8 +53,62 @@ export default function ContainerList() {
   const [deleteContainerConfirmationOpen, setDeleteContainerConfirmationOpen] =
     useState(false)
   const [deleteInProgress, setDeleteInProgress] = useState(false)
+  const [searchTerm, setSearchTerm] = useState("")
+  const [sortKey, setSortKey] = useState<SortKey>("name")
+  const [sortOrder, setSortOrder] = useState<"asc" | "desc">("asc")
+
+  const sortedAndFilteredContainers = useMemo(() => {
+    if (!containers?.items) return []
+
+    const filtered = containers.items.filter(
+      (container) =>
+        container.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        container.image.toLowerCase().includes(searchTerm.toLowerCase())
+    )
+
+    const sorted = [...filtered].sort((a, b) => {
+      let aValue: string | number = ""
+      let bValue: string | number = ""
+
+      switch (sortKey) {
+        case "name":
+          aValue = a.name
+          bValue = b.name
+          break
+        case "image":
+          aValue = a.image
+          bValue = b.image
+          break
+        case "state":
+          aValue = a.state
+          bValue = b.state
+          break
+        default:
+          break
+      }
+
+      if (aValue < bValue) {
+        return sortOrder === "asc" ? -1 : 1
+      }
+      if (aValue > bValue) {
+        return sortOrder === "asc" ? 1 : -1
+      }
+      return 0
+    })
+
+    return sorted
+  }, [containers, searchTerm, sortKey, sortOrder])
 
   if (isLoading) return <Loading />
+
+  const handleSort = (key: SortKey) => {
+    if (sortKey === key) {
+      setSortOrder(sortOrder === "asc" ? "desc" : "asc")
+    } else {
+      setSortKey(key)
+      setSortOrder("asc")
+    }
+  }
 
   const handleStartContainer = async (id: string) => {
     try {
@@ -187,7 +245,7 @@ export default function ContainerList() {
           deleteHandler={handleDeleteContainer}
           isProcessing={deleteInProgress}
           title="Delete Container"
-          message={`Are you sure you want to delete container '${container?.name}?'`}
+          message={`Are you sure you want to delete container '{container?.name}?'`}
         />
       )}
       <TopBar>
@@ -199,116 +257,158 @@ export default function ContainerList() {
           <BreadcrumbCurrent>Containers</BreadcrumbCurrent>
         </Breadcrumb>
         <TopBarActions>
-          <EditContainerBaseUrlDialog />
+          <div className="flex items-center space-x-2">
+            <Input
+              type="search"
+              placeholder="Search containers..."
+              className="w-64"
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+            />
+            <EditContainerBaseUrlDialog />
+          </div>
         </TopBarActions>
       </TopBar>
       <MainContent>
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead scope="col">Name</TableHead>
-              <TableHead scope="col" className="hidden 2xl:block">
+              <TableHead
+                scope="col"
+                className="cursor-pointer"
+                onClick={() => handleSort("name")}
+              >
+                Name
+                <SortableIcon
+                  sortKey="name"
+                  currentSortKey={sortKey}
+                  sortOrder={sortOrder}
+                />
+              </TableHead>
+              <TableHead
+                scope="col"
+                className="hidden cursor-pointer 2xl:table-cell"
+                onClick={() => handleSort("image")}
+              >
                 Image
+                <SortableIcon
+                  sortKey="image"
+                  currentSortKey={sortKey}
+                  sortOrder={sortOrder}
+                />
               </TableHead>
               <TableHead scope="col">Ports</TableHead>
-              <TableHead scope="col">State</TableHead>
+              <TableHead
+                scope="col"
+                className="cursor-pointer"
+                onClick={() => handleSort("state")}
+              >
+                State
+                <SortableIcon
+                  sortKey="state"
+                  currentSortKey={sortKey}
+                  sortOrder={sortOrder}
+                />
+              </TableHead>
               <TableHead scope="col">
                 <span className="sr-only">Actions</span>
               </TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
-            {containers?.items?.length === 0 && <TableNoData colSpan={5} />}
-            {containers?.items &&
-              containers?.items.map((item) => (
-                <TableRow
-                  key={item.id}
-                  className={CLASSES_CLICKABLE_TABLE_ROW}
-                  onClick={() => {
-                    navigate(`/nodes/${nodeId}/containers/${item.name}/logs`)
-                  }}
-                >
-                  <TableCell>
-                    <span className="font-bold" title={`Image: ${item.image}`}>
-                      <StaleStatusIcon status={item.stale} />
-                      {item.name}
-                      <br />
-                      <span className="ml-4 text-xs">
-                        {item.id.substring(0, 12)}
-                      </span>
+            {sortedAndFilteredContainers.length === 0 && (
+              <TableNoData colSpan={5} />
+            )}
+            {sortedAndFilteredContainers.map((item) => (
+              <TableRow
+                key={item.id}
+                className={CLASSES_CLICKABLE_TABLE_ROW}
+                onClick={() => {
+                  navigate(`/nodes/${nodeId}/containers/${item.name}/logs`)
+                }}
+              >
+                <TableCell>
+                  <span className="font-bold" title={`Image: ${item.image}`}>
+                    <StaleStatusIcon status={item.stale} />
+                    {item.name}
+                    <br />
+                    <span className="ml-4 text-xs">
+                      {item.id.substring(0, 12)}
                     </span>
-                  </TableCell>
-                  <TableCell className="hidden 2xl:block">
-                    {item.image}
-                  </TableCell>
-                  <TableCell>{getPortsHtml(item.ports)}</TableCell>
-                  <TableCell>
-                    {item.state == "exited" ? (
-                      <Badge variant="destructive" title={item.status}>
-                        {item.state}
-                      </Badge>
-                    ) : (
-                      <Badge variant="default" title={item.status}>
-                        {item.state}
-                      </Badge>
-                    )}
-                  </TableCell>
-                  <TableCell className="text-right">
-                    <>
-                      {item.state == "running" && (
-                        <Button
-                          variant="ghost"
-                          size={"sm"}
-                          title="Restart"
-                          onClick={(e) => {
-                            e.stopPropagation()
-                            handleRestartContainer(item.id)
-                          }}
-                        >
-                          <ArrowPathIcon className="w-4 text-green-600 dark:text-green-400" />
-                        </Button>
-                      )}
-                      {item.state == "exited" ? (
-                        <Button
-                          variant="ghost"
-                          size={"sm"}
-                          title="Start"
-                          onClick={(e) => {
-                            e.stopPropagation()
-                            handleStartContainer(item.id)
-                          }}
-                        >
-                          <PlayIcon className="w-4 text-green-600 dark:text-green-400" />
-                        </Button>
-                      ) : (
-                        <Button
-                          variant="ghost"
-                          size={"sm"}
-                          title="Stop"
-                          onClick={(e) => {
-                            e.stopPropagation()
-                            handleStopContainer(item.id)
-                          }}
-                        >
-                          <StopIcon className="w-4 text-red-600 dark:text-red-500" />
-                        </Button>
-                      )}
-                      <TableButtonDelete
+                  </span>
+                </TableCell>
+                <TableCell className="hidden 2xl:table-cell">
+                  {item.image}
+                </TableCell>
+                <TableCell>{getPortsHtml(item.ports)}</TableCell>
+                <TableCell>
+                  {item.state == "exited" ? (
+                    <Badge variant="destructive" title={item.status}>
+                      {item.state}
+                    </Badge>
+                  ) : (
+                    <Badge variant="default" title={item.status}>
+                      {item.state}
+                    </Badge>
+                  )}
+                </TableCell>
+                <TableCell className="text-right">
+                  <>
+                    {item.state == "running" && (
+                      <Button
+                        variant="ghost"
+                        size={"sm"}
+                        title="Restart"
                         onClick={(e) => {
                           e.stopPropagation()
-                          handleDeleteContainerConfirmation(item)
+                          handleRestartContainer(item.id)
                         }}
-                      />
-                    </>
-                  </TableCell>
-                </TableRow>
-              ))}
+                      >
+                        <ArrowPathIcon className="w-4 text-green-600 dark:text-green-400" />
+                      </Button>
+                    )}
+                    {item.state == "exited" ? (
+                      <Button
+                        variant="ghost"
+                        size={"sm"}
+                        title="Start"
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          handleStartContainer(item.id)
+                        }}
+                      >
+                        <PlayIcon className="w-4 text-green-600 dark:text-green-400" />
+                      </Button>
+                    ) : (
+                      <Button
+                        variant="ghost"
+                        size={"sm"}
+                        title="Stop"
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          handleStopContainer(item.id)
+                        }}
+                      >
+                        <StopIcon className="w-4 text-red-600 dark:text-red-500" />
+                      </Button>
+                    )}
+                    <TableButtonDelete
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        handleDeleteContainerConfirmation(item)
+                      }}
+                    />
+                  </>
+                </TableCell>
+              </TableRow>
+            ))}
           </TableBody>
         </Table>
       </MainContent>
     </MainArea>
   )
 }
+
 
 export function StaleStatusIcon({ status }: { status: string }) {
   let statusClassName = ""
